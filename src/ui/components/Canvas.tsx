@@ -1,6 +1,8 @@
 import React, { useRef, useEffect, useCallback } from "react";
 import { WebGLRenderer } from "../simulation/WebGLRenderer";
 import { ParticleSystem } from "../simulation/ParticleSystem";
+import { Camera } from "../simulation/Camera";
+import { InputHandler } from "../simulation/InputHandler";
 
 interface ParticleCanvasProps {
   particleCount?: number;
@@ -14,6 +16,8 @@ export const Canvas: React.FC<ParticleCanvasProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<WebGLRenderer | null>(null);
   const particleSystemRef = useRef<ParticleSystem | null>(null);
+  const cameraRef = useRef<Camera | null>(null);
+  const inputHandlerRef = useRef<InputHandler | null>(null);
   const animationIdRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(0);
 
@@ -21,16 +25,27 @@ export const Canvas: React.FC<ParticleCanvasProps> = ({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    console.log(
+      "Resize called - setting canvas size to:",
+      window.innerWidth,
+      "x",
+      window.innerHeight,
+    );
+
     // Set canvas size to window size
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
-    // Update renderer and particle system
+    // Update renderer
     if (rendererRef.current) {
       rendererRef.current.resize(canvas.width, canvas.height);
+      console.log("Renderer resized");
     }
-    if (particleSystemRef.current) {
-      particleSystemRef.current.resize(canvas.width, canvas.height);
+
+    // Update camera screen size
+    if (cameraRef.current) {
+      cameraRef.current.setScreenSize(canvas.width, canvas.height);
+      console.log("Camera screen size updated");
     }
   }, []);
 
@@ -41,20 +56,56 @@ export const Canvas: React.FC<ParticleCanvasProps> = ({
     // Set initial size
     handleResize();
 
-    // Initialize WebGL renderer
     try {
+      // Initialize camera first
+      cameraRef.current = new Camera(0, 0, 1.0);
+      cameraRef.current.setScreenSize(canvas.width, canvas.height);
+      cameraRef.current.setZoomConstraints(0.1, 10.0);
+
+      // Initialize WebGL renderer
       rendererRef.current = new WebGLRenderer(canvas);
+
+      // Set initial resolution uniform
+      rendererRef.current.resize(canvas.width, canvas.height);
+
+      // Initialize particle system with large world
+      const worldSize = Math.max(canvas.width, canvas.height) * 4; // 4x screen size
+      particleSystemRef.current = new ParticleSystem({
+        particleCount,
+        worldSize: { width: worldSize, height: worldSize },
+        colorCount,
+      });
+
+      // Initialize input handler
+      inputHandlerRef.current = new InputHandler(cameraRef.current, canvas);
+
+      // Force initial render setup
+      const initialTransform = cameraRef.current.getTransformUniforms();
+
+      console.log("All systems initialized successfully");
+      console.log("Initial canvas size:", canvas.width, "x", canvas.height);
+      console.log("Initial camera:", initialTransform);
+
+      // Force an initial render to make sure everything shows up
+      if (
+        particleSystemRef.current &&
+        rendererRef.current &&
+        cameraRef.current
+      ) {
+        const transform = cameraRef.current.getTransformUniforms();
+        rendererRef.current.render(
+          particleSystemRef.current.positions,
+          particleSystemRef.current.colors,
+          particleSystemRef.current.sizes,
+          particleCount,
+          transform.cameraPosition,
+          transform.cameraZoom,
+        );
+      }
     } catch (error) {
-      console.error("Failed to initialize WebGL:", error);
+      console.error("Failed to initialize systems:", error);
       return;
     }
-
-    // Initialize particle system
-    particleSystemRef.current = new ParticleSystem({
-      particleCount,
-      bounds: { width: canvas.width, height: canvas.height },
-      colorCount,
-    });
 
     // Animation loop
     const animate = (currentTime: number) => {
@@ -64,16 +115,25 @@ export const Canvas: React.FC<ParticleCanvasProps> = ({
       ); // Cap at 100ms
       lastTimeRef.current = currentTime;
 
-      if (particleSystemRef.current && rendererRef.current) {
+      if (
+        particleSystemRef.current &&
+        rendererRef.current &&
+        cameraRef.current
+      ) {
         // Update particle physics
         particleSystemRef.current.update(deltaTime);
 
-        // Render particles
+        // Get camera transform data
+        const cameraTransform = cameraRef.current.getTransformUniforms();
+
+        // Render particles with camera transformation
         rendererRef.current.render(
           particleSystemRef.current.positions,
           particleSystemRef.current.colors,
           particleSystemRef.current.sizes,
           particleCount,
+          cameraTransform.cameraPosition,
+          cameraTransform.cameraZoom,
         );
       }
 
@@ -92,11 +152,45 @@ export const Canvas: React.FC<ParticleCanvasProps> = ({
       cancelAnimationFrame(animationIdRef.current);
       window.removeEventListener("resize", handleResize);
 
+      if (inputHandlerRef.current) {
+        inputHandlerRef.current.dispose();
+      }
+
       if (rendererRef.current) {
         rendererRef.current.dispose();
       }
     };
   }, [particleCount, colorCount, handleResize]);
+
+  // Add keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!cameraRef.current) return;
+
+      switch (event.key) {
+        case "r":
+        case "R":
+          // Reset camera
+          cameraRef.current.reset();
+          break;
+        case "=":
+        case "+":
+          // Zoom in
+          cameraRef.current.setZoom(cameraRef.current.zoom * 1.2);
+          break;
+        case "-":
+        case "_":
+          // Zoom out
+          cameraRef.current.setZoom(cameraRef.current.zoom / 1.2);
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
 
   return (
     <canvas
@@ -108,7 +202,7 @@ export const Canvas: React.FC<ParticleCanvasProps> = ({
         width: "100%",
         height: "100%",
         display: "block",
-        cursor: "none",
+        cursor: "grab",
       }}
     />
   );

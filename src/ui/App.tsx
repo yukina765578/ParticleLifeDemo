@@ -15,7 +15,6 @@ const headerStyle: React.CSSProperties = {
   color: "white",
   fontFamily: "monospace",
   fontSize: "14px",
-  pointerEvents: "none",
   textShadow: "0 0 10px rgba(0,0,0,0.8)",
 };
 

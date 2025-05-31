@@ -1,11 +1,10 @@
 export interface ParticleSystemConfig {
   particleCount: number;
-  bounds: { width: number; height: number };
+  worldSize: { width: number; height: number };
   colorCount: number;
 }
 
 export class ParticleSystem {
-  // Structure of Arrays for GPU efficiency
   public positions: Float32Array;
   public velocities: Float32Array;
   public colors: Float32Array;
@@ -14,18 +13,15 @@ export class ParticleSystem {
   public forces: Float32Array;
 
   private particleCount: number;
-  private bounds: { width: number; height: number };
+  private worldSize: { width: number; height: number };
   private colorCount: number;
-
-  // Color palette for particles
   private colorPalette: Float32Array;
 
   constructor(config: ParticleSystemConfig) {
     this.particleCount = config.particleCount;
-    this.bounds = config.bounds;
+    this.worldSize = config.worldSize;
     this.colorCount = config.colorCount;
 
-    // Initialize arrays
     this.positions = new Float32Array(this.particleCount * 2);
     this.velocities = new Float32Array(this.particleCount * 2);
     this.colors = new Float32Array(this.particleCount * 3);
@@ -33,10 +29,8 @@ export class ParticleSystem {
     this.sizes = new Float32Array(this.particleCount);
     this.forces = new Float32Array(this.particleCount * 2);
 
-    // Generate color palette
     this.colorPalette = this.generateColorPalette();
 
-    // Initialize particles
     this.initializeParticles();
   }
 
@@ -77,13 +71,13 @@ export class ParticleSystem {
 
   private initializeParticles(): void {
     for (let i = 0; i < this.particleCount; i++) {
-      // Random positions
-      this.positions[i * 2] = Math.random() * this.bounds.width;
-      this.positions[i * 2 + 1] = Math.random() * this.bounds.height;
+      // Random positions in world space (centered around origin)
+      this.positions[i * 2] = (Math.random() - 0.5) * this.worldSize.width;
+      this.positions[i * 2 + 1] = (Math.random() - 0.5) * this.worldSize.height;
 
       // Random velocities (small initial velocity)
-      this.velocities[i * 2] = (Math.random() - 0.5) * 0.5;
-      this.velocities[i * 2 + 1] = (Math.random() - 0.5) * 0.5;
+      this.velocities[i * 2] = (Math.random() - 0.5) * 10.0;
+      this.velocities[i * 2 + 1] = (Math.random() - 0.5) * 10.0;
 
       // Random color assignment
       const colorIndex = Math.floor(Math.random() * this.colorCount);
@@ -94,8 +88,7 @@ export class ParticleSystem {
       this.colors[i * 3 + 1] = this.colorPalette[colorIndex * 3 + 1];
       this.colors[i * 3 + 2] = this.colorPalette[colorIndex * 3 + 2];
 
-      // Particle size (can vary later)
-      this.sizes[i] = 3.0 + Math.random() * 2.0;
+      this.sizes[i] = 4.0;
     }
   }
 
@@ -105,7 +98,7 @@ export class ParticleSystem {
 
     // Simple physics update for now (we'll add particle interactions later)
     const damping = 0.995;
-    const maxSpeed = 100;
+    const maxSpeed = 200;
 
     for (let i = 0; i < this.particleCount; i++) {
       const px = i * 2;
@@ -116,8 +109,8 @@ export class ParticleSystem {
       this.velocities[py] *= damping;
 
       // Add some random brownian motion
-      this.velocities[px] += (Math.random() - 0.5) * 0.1;
-      this.velocities[py] += (Math.random() - 0.5) * 0.1;
+      this.velocities[px] += (Math.random() - 0.5) * 2.0;
+      this.velocities[py] += (Math.random() - 0.5) * 2.0;
 
       // Clamp velocity
       const speed = Math.sqrt(
@@ -133,27 +126,47 @@ export class ParticleSystem {
       this.positions[px] += this.velocities[px] * deltaTime;
       this.positions[py] += this.velocities[py] * deltaTime;
 
-      // Wrap around edges
-      if (this.positions[px] < 0) this.positions[px] += this.bounds.width;
-      if (this.positions[px] > this.bounds.width)
-        this.positions[px] -= this.bounds.width;
-      if (this.positions[py] < 0) this.positions[py] += this.bounds.height;
-      if (this.positions[py] > this.bounds.height)
-        this.positions[py] -= this.bounds.height;
+      // Wrap around world edges (much larger than screen)
+      const halfWidth = this.worldSize.width / 2;
+      const halfHeight = this.worldSize.height / 2;
+
+      if (this.positions[px] < -halfWidth)
+        this.positions[px] += this.worldSize.width;
+      if (this.positions[px] > halfWidth)
+        this.positions[px] -= this.worldSize.width;
+      if (this.positions[py] < -halfHeight)
+        this.positions[py] += this.worldSize.height;
+      if (this.positions[py] > halfHeight)
+        this.positions[py] -= this.worldSize.height;
     }
   }
 
-  public resize(width: number, height: number): void {
-    // Scale particle positions to new bounds
-    const scaleX = width / this.bounds.width;
-    const scaleY = height / this.bounds.height;
+  public setWorldSize(width: number, height: number): void {
+    this.worldSize.width = width;
+    this.worldSize.height = height;
+  }
+
+  public getWorldBounds(): { width: number; height: number } {
+    return { ...this.worldSize };
+  }
+
+  public getParticlesInRegion(
+    left: number,
+    right: number,
+    top: number,
+    bottom: number,
+  ): number[] {
+    const visibleParticles: number[] = [];
 
     for (let i = 0; i < this.particleCount; i++) {
-      this.positions[i * 2] *= scaleX;
-      this.positions[i * 2 + 1] *= scaleY;
+      const x = this.positions[i * 2];
+      const y = this.positions[i * 2 + 1];
+
+      if (x >= left && x <= right && y >= top && y <= bottom) {
+        visibleParticles.push(i);
+      }
     }
 
-    this.bounds.width = width;
-    this.bounds.height = height;
+    return visibleParticles;
   }
 }
