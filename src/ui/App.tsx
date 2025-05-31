@@ -1,31 +1,48 @@
-import { useState } from 'react'
-import reactLogo from '../assets/react.svg'
-import './App.css'
+import { Canvas } from "./components/Canvas";
+import "./App.css";
+
+const containerStyle: React.CSSProperties = {
+  position: "relative",
+  width: "100vw",
+  height: "100vh",
+  overflow: "hidden",
+};
+
+const headerStyle: React.CSSProperties = {
+  position: "absolute",
+  top: "20px",
+  left: "20px",
+  color: "white",
+  fontFamily: "monospace",
+  fontSize: "14px",
+  pointerEvents: "none",
+  textShadow: "0 0 10px rgba(0,0,0,0.8)",
+};
+
+const titleStyle: React.CSSProperties = {
+  margin: 0,
+};
+
+const infoStyle: React.CSSProperties = {
+  margin: "5px 0",
+  opacity: 0.8,
+};
 
 function App() {
-  const [count, setCount] = useState(0)
+  const particleCount = 3000;
+  const colorCount = 6;
 
   return (
-    <>
-      <div>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
+    <div style={containerStyle}>
+      <Canvas particleCount={particleCount} colorCount={colorCount} />
+      <div style={headerStyle}>
+        <h2 style={titleStyle}>Particle Life</h2>
+        <p style={infoStyle}>
+          {particleCount} particles • {colorCount} colors
         </p>
       </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    </div>
+  );
 }
 
-export default App
+export default App;
