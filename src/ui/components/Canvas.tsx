@@ -5,13 +5,25 @@ import { Camera } from "../simulation/Camera";
 import { InputHandler } from "../simulation/InputHandler";
 
 interface ParticleCanvasProps {
-  particleCount?: number;
-  colorCount?: number;
+  particleCount: number;
+  colorCount: number;
+  sensingRadius: number;
+  forceScale: number;
+  maxSpeed: number;
+  damping: number;
+  colorMatrix: number[][];
+  onFpsUpdate?: (fps: number) => void;
 }
 
 export const Canvas: React.FC<ParticleCanvasProps> = ({
-  particleCount = 2000,
-  colorCount = 6,
+  particleCount,
+  colorCount,
+  sensingRadius,
+  forceScale,
+  maxSpeed,
+  damping,
+  colorMatrix,
+  onFpsUpdate,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<WebGLRenderer | null>(null);
@@ -20,6 +32,7 @@ export const Canvas: React.FC<ParticleCanvasProps> = ({
   const inputHandlerRef = useRef<InputHandler | null>(null);
   const animationIdRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(0);
+  const fpsCounterRef = useRef({ frameCount: 0, lastTime: 0, fps: 0 });
 
   const handleResize = useCallback(() => {
     const canvas = canvasRef.current;
@@ -49,6 +62,28 @@ export const Canvas: React.FC<ParticleCanvasProps> = ({
     }
   }, []);
 
+  // FPS calculation
+  const updateFps = useCallback(
+    (currentTime: number) => {
+      const counter = fpsCounterRef.current;
+      counter.frameCount++;
+
+      if (currentTime - counter.lastTime >= 1000) {
+        // Update every second
+        counter.fps = Math.round(
+          (counter.frameCount * 1000) / (currentTime - counter.lastTime),
+        );
+        counter.frameCount = 0;
+        counter.lastTime = currentTime;
+
+        if (onFpsUpdate) {
+          onFpsUpdate(counter.fps);
+        }
+      }
+    },
+    [onFpsUpdate],
+  );
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -68,25 +103,50 @@ export const Canvas: React.FC<ParticleCanvasProps> = ({
       // Set initial resolution uniform
       rendererRef.current.resize(canvas.width, canvas.height);
 
-      // Initialize particle system with large world
+      // Initialize particle system with large world and passed parameters
       const worldSize = Math.max(canvas.width, canvas.height) * 4; // 4x screen size
       particleSystemRef.current = new ParticleSystem({
         particleCount,
         worldSize: { width: worldSize, height: worldSize },
         colorCount,
+        sensingRadius,
+        betaDistance: 15, // Keep default for now
       });
+
+      // Apply the color matrix from props
+      if (colorMatrix && particleSystemRef.current) {
+        for (let i = 0; i < colorCount; i++) {
+          for (let j = 0; j < colorCount; j++) {
+            if (colorMatrix[i] && colorMatrix[i][j] !== undefined) {
+              particleSystemRef.current.setColorRule(i, j, colorMatrix[i][j]);
+            }
+          }
+        }
+      }
+
+      // Apply advanced settings
+      if (particleSystemRef.current) {
+        particleSystemRef.current.setSensingRadius(sensingRadius);
+        // Note: You'll need to add these methods to ParticleSystem
+        // particleSystemRef.current.setForceScale(forceScale);
+        // particleSystemRef.current.setMaxSpeed(maxSpeed);
+        // particleSystemRef.current.setDamping(damping);
+      }
 
       // Initialize input handler
       inputHandlerRef.current = new InputHandler(cameraRef.current, canvas);
 
-      // Force initial render setup
-      const initialTransform = cameraRef.current.getTransformUniforms();
-
       console.log("All systems initialized successfully");
-      console.log("Initial canvas size:", canvas.width, "x", canvas.height);
-      console.log("Initial camera:", initialTransform);
+      console.log("Canvas parameters:", {
+        particleCount,
+        colorCount,
+        sensingRadius,
+        forceScale,
+        maxSpeed,
+        damping,
+      });
 
-      // Force an initial render to make sure everything shows up
+      // Force an initial render
       if (
         particleSystemRef.current &&
         rendererRef.current &&
@@ -115,6 +175,9 @@ export const Canvas: React.FC<ParticleCanvasProps> = ({
       ); // Cap at 100ms
       lastTimeRef.current = currentTime;
 
+      // Update FPS
+      updateFps(currentTime);
+
       if (
         particleSystemRef.current &&
         rendererRef.current &&
@@ -142,6 +205,7 @@ export const Canvas: React.FC<ParticleCanvasProps> = ({
 
     // Start animation
     lastTimeRef.current = performance.now();
+    fpsCounterRef.current.lastTime = performance.now();
     animationIdRef.current = requestAnimationFrame(animate);
 
     // Add resize listener
@@ -160,7 +224,17 @@ export const Canvas: React.FC<ParticleCanvasProps> = ({
         rendererRef.current.dispose();
       }
     };
-  }, [particleCount, colorCount, handleResize]);
+  }, [
+    particleCount,
+    colorCount,
+    sensingRadius,
+    forceScale,
+    maxSpeed,
+    damping,
+    colorMatrix,
+    handleResize,
+    updateFps,
+  ]); // Re-run when any of these props change
 
   // Add keyboard shortcuts
   useEffect(() => {
