@@ -2,6 +2,8 @@ export interface ParticleSystemConfig {
   particleCount: number;
   worldSize: { width: number; height: number };
   colorCount: number;
+  sensingRadius?: number;
+  betaDistance?: number;
 }
 
 export class ParticleSystem {
@@ -16,11 +18,18 @@ export class ParticleSystem {
   private worldSize: { width: number; height: number };
   private colorCount: number;
   private colorPalette: Float32Array;
+  private colorMatrix: Float32Array; // Interaction rules matrix
+
+  // Interaction parameters
+  private sensingRadius: number;
+  private betaDistance: number;
 
   constructor(config: ParticleSystemConfig) {
     this.particleCount = config.particleCount;
     this.worldSize = config.worldSize;
     this.colorCount = config.colorCount;
+    this.sensingRadius = config.sensingRadius || 80; // Sensing radius for interactions
+    this.betaDistance = config.betaDistance || 15; // Not used in particle life force function
 
     this.positions = new Float32Array(this.particleCount * 2);
     this.velocities = new Float32Array(this.particleCount * 2);
@@ -30,6 +39,7 @@ export class ParticleSystem {
     this.forces = new Float32Array(this.particleCount * 2);
 
     this.colorPalette = this.generateColorPalette();
+    this.colorMatrix = this.generateColorMatrix();
 
     this.initializeParticles();
   }
@@ -46,6 +56,25 @@ export class ParticleSystem {
     }
 
     return palette;
+  }
+
+  private generateColorMatrix(): Float32Array {
+    const matrix = new Float32Array(this.colorCount * this.colorCount);
+
+    // Generate stronger asymmetric interaction rules
+    for (let i = 0; i < this.colorCount; i++) {
+      for (let j = 0; j < this.colorCount; j++) {
+        if (i === j) {
+          // Same color - repulsion to prevent clustering
+          matrix[i * this.colorCount + j] = -0.4;
+        } else {
+          // Different colors - stronger random asymmetric rules
+          matrix[i * this.colorCount + j] = (Math.random() - 0.5) * 3.0; // Range: -1.5 to +1.5
+        }
+      }
+    }
+
+    return matrix;
   }
 
   private hslToRgb(h: number, s: number, l: number): [number, number, number] {
@@ -75,9 +104,9 @@ export class ParticleSystem {
       this.positions[i * 2] = (Math.random() - 0.5) * this.worldSize.width;
       this.positions[i * 2 + 1] = (Math.random() - 0.5) * this.worldSize.height;
 
-      // Random velocities (small initial velocity)
-      this.velocities[i * 2] = (Math.random() - 0.5) * 10.0;
-      this.velocities[i * 2 + 1] = (Math.random() - 0.5) * 10.0;
+      // Start with zero velocity
+      this.velocities[i * 2] = 0;
+      this.velocities[i * 2 + 1] = 0;
 
       // Random color assignment
       const colorIndex = Math.floor(Math.random() * this.colorCount);
@@ -96,21 +125,113 @@ export class ParticleSystem {
     // Reset forces
     this.forces.fill(0);
 
-    // Simple physics update for now (we'll add particle interactions later)
-    const damping = 0.995;
-    const maxSpeed = 200;
+    // Calculate particle interactions
+    this.calculateForces();
+
+    // Physics integration
+    this.integrate(deltaTime);
+
+    // Handle boundaries
+    this.handleBoundaries();
+  }
+
+  private calculateForces(): void {
+    const sensingRadiusSquared = this.sensingRadius * this.sensingRadius;
+
+    for (let i = 0; i < this.particleCount; i++) {
+      const x1 = this.positions[i * 2];
+      const y1 = this.positions[i * 2 + 1];
+      const color1 = this.colorIndices[i];
+
+      for (let j = i + 1; j < this.particleCount; j++) {
+        const x2 = this.positions[j * 2];
+        const y2 = this.positions[j * 2 + 1];
+        const color2 = this.colorIndices[j];
+
+        // Calculate distance
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const distanceSquared = dx * dx + dy * dy;
+
+        // Skip if outside sensing radius
+        if (distanceSquared > sensingRadiusSquared) continue;
+
+        // Calculate actual distance for normalization
+        const distance = Math.sqrt(distanceSquared);
+
+        // Normalized direction vectors
+        const dirX = dx / distance;
+        const dirY = dy / distance;
+
+        // Normalize distance to 0-1 range (based on sensing radius)
+        const normalizedDistance = distance / this.sensingRadius;
+
+        // Get interaction rules (asymmetric)
+        const rule1to2 = this.colorMatrix[color1 * this.colorCount + color2];
+        const rule2to1 = this.colorMatrix[color2 * this.colorCount + color1];
+
+        // Calculate force using proper particle life force function
+        const force1Magnitude = this.particleLifeForce(
+          normalizedDistance,
+          rule1to2,
+        );
+        const force2Magnitude = this.particleLifeForce(
+          normalizedDistance,
+          rule2to1,
+        );
+
+        // Apply forces
+        const force1X = dirX * force1Magnitude;
+        const force1Y = dirY * force1Magnitude;
+        const force2X = -dirX * force2Magnitude;
+        const force2Y = -dirY * force2Magnitude;
+
+        // Accumulate forces
+        this.forces[i * 2] += force1X;
+        this.forces[i * 2 + 1] += force1Y;
+        this.forces[j * 2] += force2X;
+        this.forces[j * 2 + 1] += force2Y;
+      }
+    }
+  }
+
+  /**
+   * Particle Life force function
+   * @param r - normalized distance (0-1)
+   * @param a - attraction rule (-1 to +1)
+   * @returns force magnitude
+   */
+  private particleLifeForce(r: number, a: number): number {
+    const beta = 0.3;
+
+    if (r < beta) {
+      // Repulsion zone - always repulsive regardless of attraction rule
+      return r / beta - 1;
+    } else if (beta < r && r < 1) {
+      // Attraction/repulsion zone with smooth falloff
+      return a * (1 - Math.abs(2 * r - 1 - beta) / (1 - beta));
+    } else {
+      // No force beyond sensing radius
+      return 0;
+    }
+  }
+
+  private integrate(deltaTime: number): void {
+    const damping = 0.98; // Slightly higher damping for stability
+    const maxSpeed = 120; // Moderate max speed
+    const forceScale = 150; // Moderate force scaling
 
     for (let i = 0; i < this.particleCount; i++) {
       const px = i * 2;
       const py = i * 2 + 1;
 
+      // Apply forces to velocity
+      this.velocities[px] += this.forces[px] * deltaTime * forceScale;
+      this.velocities[py] += this.forces[py] * deltaTime * forceScale;
+
       // Apply damping
       this.velocities[px] *= damping;
       this.velocities[py] *= damping;
-
-      // Add some random brownian motion
-      this.velocities[px] += (Math.random() - 0.5) * 2.0;
-      this.velocities[py] += (Math.random() - 0.5) * 2.0;
 
       // Clamp velocity
       const speed = Math.sqrt(
@@ -125,11 +246,18 @@ export class ParticleSystem {
       // Update positions
       this.positions[px] += this.velocities[px] * deltaTime;
       this.positions[py] += this.velocities[py] * deltaTime;
+    }
+  }
 
-      // Wrap around world edges (much larger than screen)
-      const halfWidth = this.worldSize.width / 2;
-      const halfHeight = this.worldSize.height / 2;
+  private handleBoundaries(): void {
+    const halfWidth = this.worldSize.width / 2;
+    const halfHeight = this.worldSize.height / 2;
 
+    for (let i = 0; i < this.particleCount; i++) {
+      const px = i * 2;
+      const py = i * 2 + 1;
+
+      // Wrap around world edges
       if (this.positions[px] < -halfWidth)
         this.positions[px] += this.worldSize.width;
       if (this.positions[px] > halfWidth)
@@ -139,6 +267,53 @@ export class ParticleSystem {
       if (this.positions[py] > halfHeight)
         this.positions[py] -= this.worldSize.height;
     }
+  }
+
+  // Public methods for interaction
+  public setColorRule(colorA: number, colorB: number, strength: number): void {
+    if (
+      colorA >= 0 &&
+      colorA < this.colorCount &&
+      colorB >= 0 &&
+      colorB < this.colorCount
+    ) {
+      this.colorMatrix[colorA * this.colorCount + colorB] = strength;
+    }
+  }
+
+  public getColorRule(colorA: number, colorB: number): number {
+    if (
+      colorA >= 0 &&
+      colorA < this.colorCount &&
+      colorB >= 0 &&
+      colorB < this.colorCount
+    ) {
+      return this.colorMatrix[colorA * this.colorCount + colorB];
+    }
+    return 0;
+  }
+
+  public randomizeRules(): void {
+    for (let i = 0; i < this.colorCount; i++) {
+      for (let j = 0; j < this.colorCount; j++) {
+        if (i === j) {
+          // Same color - repulsion
+          this.colorMatrix[i * this.colorCount + j] = -0.4;
+        } else {
+          // Random asymmetric rules - stronger
+          this.colorMatrix[i * this.colorCount + j] =
+            (Math.random() - 0.5) * 3.0;
+        }
+      }
+    }
+  }
+
+  public setSensingRadius(radius: number): void {
+    this.sensingRadius = radius;
+  }
+
+  public setBetaDistance(distance: number): void {
+    this.betaDistance = distance;
   }
 
   public setWorldSize(width: number, height: number): void {
