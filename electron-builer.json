@@ -1,0 +1,18 @@
+{
+  "appId": "com.n-ziermann.electron-test",
+  "files": ["dist-electron", "dist-react"],
+  "icon": "./desktopIcon.png",
+  "extraResources": [
+    "dist-electrion/preload.cjs"
+  ],
+  "mac": {
+    "target": "dmg",
+  },
+  "linux": {
+    "target": "AppImage",
+    "category": "Utility"
+  },
+  "win": {
+    "target": ["portable", "msi"]
+  }
+}
