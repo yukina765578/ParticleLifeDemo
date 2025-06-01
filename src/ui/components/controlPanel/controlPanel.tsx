@@ -1,22 +1,39 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { ControlPanelHeader } from "./ControlPanelHeader";
 import { ControlPanelContent } from "./ControlPanelContent";
-import { ParticleSystem } from "../../simulation/ParticleSystem";
 
 interface ControlPanelProps {
-  particleSystem: ParticleSystem | null;
   particleCount: number;
   colorCount: number;
+  sensingRadius: number;
+  forceScale: number;
+  maxSpeed: number;
+  damping: number;
+  colorMatrix: number[][];
   onParticleCountChange: (count: number) => void;
   onColorCountChange: (count: number) => void;
+  onSensingRadiusChange: (radius: number) => void;
+  onForceScaleChange: (scale: number) => void;
+  onMaxSpeedChange: (speed: number) => void;
+  onDampingChange: (damping: number) => void;
+  onMatrixUpdate: (matrix: number[][]) => void;
 }
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
-  particleSystem,
   particleCount,
   colorCount,
+  sensingRadius,
+  forceScale,
+  maxSpeed,
+  damping,
+  colorMatrix,
   onParticleCountChange,
   onColorCountChange,
+  onSensingRadiusChange,
+  onForceScaleChange,
+  onMaxSpeedChange,
+  onDampingChange,
+  onMatrixUpdate,
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [position, setPosition] = useState({ x: 20, y: 20 });
@@ -72,8 +89,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
   const panelStyle: React.CSSProperties = {
     position: "fixed",
+    left: position.x, // Changed from right to left
     top: position.y,
-    right: position.x,
     background: "rgba(20, 20, 30, 0.95)",
     backdropFilter: "blur(10px)",
     border: "1px solid rgba(255, 255, 255, 0.1)",
@@ -100,11 +117,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       />
       {!isMinimized && (
         <ControlPanelContent
-          particleSystem={particleSystem}
           particleCount={particleCount}
           colorCount={colorCount}
+          colorMatrix={colorMatrix}
           onParticleCountChange={onParticleCountChange}
           onColorCountChange={onColorCountChange}
+          onMatrixUpdate={onMatrixUpdate}
         />
       )}
     </div>

@@ -38,13 +38,6 @@ export const Canvas: React.FC<ParticleCanvasProps> = ({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    console.log(
-      "Resize called - setting canvas size to:",
-      window.innerWidth,
-      "x",
-      window.innerHeight,
-    );
-
     // Set canvas size to window size
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -52,13 +45,11 @@ export const Canvas: React.FC<ParticleCanvasProps> = ({
     // Update renderer
     if (rendererRef.current) {
       rendererRef.current.resize(canvas.width, canvas.height);
-      console.log("Renderer resized");
     }
 
     // Update camera screen size
     if (cameraRef.current) {
       cameraRef.current.setScreenSize(canvas.width, canvas.height);
-      console.log("Camera screen size updated");
     }
   }, []);
 
@@ -69,7 +60,6 @@ export const Canvas: React.FC<ParticleCanvasProps> = ({
       counter.frameCount++;
 
       if (currentTime - counter.lastTime >= 1000) {
-        // Update every second
         counter.fps = Math.round(
           (counter.frameCount * 1000) / (currentTime - counter.lastTime),
         );
@@ -84,6 +74,26 @@ export const Canvas: React.FC<ParticleCanvasProps> = ({
     [onFpsUpdate],
   );
 
+  // Update particle system when relevant props change
+  useEffect(() => {
+    if (!particleSystemRef.current) return;
+
+    // Update color matrix
+    for (let i = 0; i < colorCount; i++) {
+      for (let j = 0; j < colorCount; j++) {
+        particleSystemRef.current.setColorRule(i, j, colorMatrix[i][j]);
+      }
+    }
+
+    // Update other parameters
+    particleSystemRef.current.setSensingRadius(sensingRadius);
+    // TODO: Add these methods to ParticleSystem if needed
+    // particleSystemRef.current.setForceScale(forceScale);
+    // particleSystemRef.current.setMaxSpeed(maxSpeed);
+    // particleSystemRef.current.setDamping(damping);
+  }, [colorMatrix, sensingRadius, forceScale, maxSpeed, damping, colorCount]);
+
+  // Initialize and recreate particle system when particle count or color count changes
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -99,69 +109,29 @@ export const Canvas: React.FC<ParticleCanvasProps> = ({
 
       // Initialize WebGL renderer
       rendererRef.current = new WebGLRenderer(canvas);
-
-      // Set initial resolution uniform
       rendererRef.current.resize(canvas.width, canvas.height);
 
-      // Initialize particle system with large world and passed parameters
-      const worldSize = Math.max(canvas.width, canvas.height) * 4; // 4x screen size
+      // Initialize particle system
+      const worldSize = Math.max(canvas.width, canvas.height) * 4;
       particleSystemRef.current = new ParticleSystem({
         particleCount,
         worldSize: { width: worldSize, height: worldSize },
         colorCount,
         sensingRadius,
-        betaDistance: 15, // Keep default for now
+        betaDistance: 15,
       });
 
-      // Apply the color matrix from props
-      if (colorMatrix && particleSystemRef.current) {
-        for (let i = 0; i < colorCount; i++) {
-          for (let j = 0; j < colorCount; j++) {
-            if (colorMatrix[i] && colorMatrix[i][j] !== undefined) {
-              particleSystemRef.current.setColorRule(i, j, colorMatrix[i][j]);
-            }
-          }
+      // Apply the color matrix
+      for (let i = 0; i < colorCount; i++) {
+        for (let j = 0; j < colorCount; j++) {
+          particleSystemRef.current.setColorRule(i, j, colorMatrix[i][j]);
         }
-      }
-
-      // Apply advanced settings
-      if (particleSystemRef.current) {
-        particleSystemRef.current.setSensingRadius(sensingRadius);
-        // Note: You'll need to add these methods to ParticleSystem
-        // particleSystemRef.current.setForceScale(forceScale);
-        // particleSystemRef.current.setMaxSpeed(maxSpeed);
-        // particleSystemRef.current.setDamping(damping);
       }
 
       // Initialize input handler
       inputHandlerRef.current = new InputHandler(cameraRef.current, canvas);
 
       console.log("All systems initialized successfully");
-      console.log("Canvas parameters:", {
-        particleCount,
-        colorCount,
-        sensingRadius,
-        forceScale,
-        maxSpeed,
-        damping,
-      });
-
-      // Force an initial render
-      if (
-        particleSystemRef.current &&
-        rendererRef.current &&
-        cameraRef.current
-      ) {
-        const transform = cameraRef.current.getTransformUniforms();
-        rendererRef.current.render(
-          particleSystemRef.current.positions,
-          particleSystemRef.current.colors,
-          particleSystemRef.current.sizes,
-          particleCount,
-          transform.cameraPosition,
-          transform.cameraZoom,
-        );
-      }
     } catch (error) {
       console.error("Failed to initialize systems:", error);
       return;
@@ -172,7 +142,7 @@ export const Canvas: React.FC<ParticleCanvasProps> = ({
       const deltaTime = Math.min(
         (currentTime - lastTimeRef.current) / 1000,
         0.1,
-      ); // Cap at 100ms
+      );
       lastTimeRef.current = currentTime;
 
       // Update FPS
@@ -224,17 +194,7 @@ export const Canvas: React.FC<ParticleCanvasProps> = ({
         rendererRef.current.dispose();
       }
     };
-  }, [
-    particleCount,
-    colorCount,
-    sensingRadius,
-    forceScale,
-    maxSpeed,
-    damping,
-    colorMatrix,
-    handleResize,
-    updateFps,
-  ]); // Re-run when any of these props change
+  }, [particleCount, colorCount, handleResize, updateFps]);
 
   // Add keyboard shortcuts
   useEffect(() => {
@@ -244,17 +204,14 @@ export const Canvas: React.FC<ParticleCanvasProps> = ({
       switch (event.key) {
         case "r":
         case "R":
-          // Reset camera
           cameraRef.current.reset();
           break;
         case "=":
         case "+":
-          // Zoom in
           cameraRef.current.setZoom(cameraRef.current.zoom * 1.2);
           break;
         case "-":
         case "_":
-          // Zoom out
           cameraRef.current.setZoom(cameraRef.current.zoom / 1.2);
           break;
       }

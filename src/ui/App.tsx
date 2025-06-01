@@ -1,7 +1,6 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { Canvas } from "./components/Canvas";
 import { ControlPanel } from "./components/controlPanel/ControlPanel";
-import { ParticleSystem } from "./simulation/ParticleSystem";
 import "./App.css";
 
 const containerStyle: React.CSSProperties = {
@@ -39,12 +38,13 @@ function App() {
   const [forceScale, setForceScale] = useState(150);
   const [maxSpeed, setMaxSpeed] = useState(120);
   const [damping, setDamping] = useState(0.98);
-  const [colorMatrix, setColorMatrix] = useState<number[][]>(() => {
-    // Initialize with default values
+
+  // Initialize color matrix
+  const initializeMatrix = (count: number) => {
     const matrix: number[][] = [];
-    for (let i = 0; i < colorCount; i++) {
+    for (let i = 0; i < count; i++) {
       matrix[i] = [];
-      for (let j = 0; j < colorCount; j++) {
+      for (let j = 0; j < count; j++) {
         if (i === j) {
           matrix[i][j] = -0.4; // Same color repulsion
         } else {
@@ -53,104 +53,50 @@ function App() {
       }
     }
     return matrix;
-  });
+  };
 
-  // Ref to hold the particle system instance
-  const particleSystemRef = useRef<ParticleSystem | null>(null);
+  const [colorMatrix, setColorMatrix] = useState<number[][]>(() =>
+    initializeMatrix(colorCount),
+  );
 
   // FPS state for display
   const [fps, setFps] = useState(0);
 
-  // Create or recreate particle system when count or color changes
-  const createParticleSystem = useCallback(() => {
-    // Default world size (will be updated by Canvas based on actual size)
-    const worldSize = 4000;
-
-    const newSystem = new ParticleSystem({
-      particleCount,
-      worldSize: { width: worldSize, height: worldSize },
-      colorCount,
-      sensingRadius,
-      betaDistance: 15,
-    });
-
-    // Apply the color matrix
-    for (let i = 0; i < colorCount; i++) {
-      for (let j = 0; j < colorCount; j++) {
-        if (colorMatrix[i] && colorMatrix[i][j] !== undefined) {
-          newSystem.setColorRule(i, j, colorMatrix[i][j]);
-        }
-      }
-    }
-
-    particleSystemRef.current = newSystem;
-    return newSystem;
-  }, [particleCount, colorCount, sensingRadius, colorMatrix]);
-
-  // Initialize particle system on mount
-  useEffect(() => {
-    createParticleSystem();
-  }, []); // Only on mount
-
   // Handler for particle count change
-  const handleParticleCountChange = useCallback(
-    (count: number) => {
-      setParticleCount(count);
-      // Recreate the particle system with new count
-      createParticleSystem();
-    },
-    [createParticleSystem],
-  );
+  const handleParticleCountChange = useCallback((count: number) => {
+    setParticleCount(count);
+  }, []);
 
   // Handler for color count change
-  const handleColorCountChange = useCallback(
-    (count: number) => {
-      setColorCount(count);
+  const handleColorCountChange = useCallback((count: number) => {
+    setColorCount(count);
+    // Reset matrix for new color count
+    setColorMatrix(initializeMatrix(count));
+  }, []);
 
-      // Update color matrix for new color count
-      const newMatrix: number[][] = [];
-      for (let i = 0; i < count; i++) {
-        newMatrix[i] = [];
-        for (let j = 0; j < count; j++) {
-          if (i === j) {
-            newMatrix[i][j] = -0.4;
-          } else {
-            newMatrix[i][j] = (Math.random() - 0.5) * 3.0;
-          }
-        }
-      }
-      setColorMatrix(newMatrix);
-
-      // Recreate the particle system
-      createParticleSystem();
-    },
-    [createParticleSystem],
-  );
+  // Handler for matrix update
+  const handleMatrixUpdate = useCallback((newMatrix: number[][]) => {
+    setColorMatrix(newMatrix);
+  }, []);
 
   // Handler for sensing radius change
   const handleSensingRadiusChange = useCallback((radius: number) => {
     setSensingRadius(radius);
-    if (particleSystemRef.current) {
-      particleSystemRef.current.setSensingRadius(radius);
-    }
   }, []);
 
   // Handler for force scale change
   const handleForceScaleChange = useCallback((scale: number) => {
     setForceScale(scale);
-    // Note: You'll need to add setForceScale method to ParticleSystem
   }, []);
 
   // Handler for max speed change
   const handleMaxSpeedChange = useCallback((speed: number) => {
     setMaxSpeed(speed);
-    // Note: You'll need to add setMaxSpeed method to ParticleSystem
   }, []);
 
   // Handler for damping change
   const handleDampingChange = useCallback((dampingValue: number) => {
     setDamping(dampingValue);
-    // Note: You'll need to add setDamping method to ParticleSystem
   }, []);
 
   // Handler for FPS updates from Canvas
@@ -161,7 +107,6 @@ function App() {
   return (
     <div style={containerStyle}>
       <Canvas
-        particleSystem={particleSystemRef.current}
         particleCount={particleCount}
         colorCount={colorCount}
         sensingRadius={sensingRadius}
@@ -172,7 +117,6 @@ function App() {
         onFpsUpdate={handleFpsUpdate}
       />
       <ControlPanel
-        particleSystem={particleSystemRef.current}
         particleCount={particleCount}
         colorCount={colorCount}
         sensingRadius={sensingRadius}
@@ -186,6 +130,7 @@ function App() {
         onForceScaleChange={handleForceScaleChange}
         onMaxSpeedChange={handleMaxSpeedChange}
         onDampingChange={handleDampingChange}
+        onMatrixUpdate={handleMatrixUpdate}
       />
       <div style={headerStyle}>
         <h2 style={titleStyle}>Particle Life</h2>

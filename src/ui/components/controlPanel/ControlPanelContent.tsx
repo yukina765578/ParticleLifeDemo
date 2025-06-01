@@ -1,21 +1,22 @@
 import React from "react";
 import { InteractionMatrix } from "./InteractionMatrix";
-import { ParticleSystem } from "../simulation/ParticleSystem";
 
 interface ControlPanelContentProps {
-  particleSystem: ParticleSystem | null;
   particleCount: number;
   colorCount: number;
+  colorMatrix: number[][];
   onParticleCountChange: (count: number) => void;
   onColorCountChange: (count: number) => void;
+  onMatrixUpdate: (matrix: number[][]) => void;
 }
 
 export const ControlPanelContent: React.FC<ControlPanelContentProps> = ({
-  particleSystem,
   particleCount,
   colorCount,
+  colorMatrix,
   onParticleCountChange,
   onColorCountChange,
+  onMatrixUpdate,
 }) => {
   const contentStyle: React.CSSProperties = {
     padding: "16px",
@@ -90,8 +91,9 @@ export const ControlPanelContent: React.FC<ControlPanelContentProps> = ({
       </div>
 
       <InteractionMatrix
-        particleSystem={particleSystem}
         colorCount={colorCount}
+        colorMatrix={colorMatrix}
+        onMatrixUpdate={onMatrixUpdate}
       />
     </div>
   );
