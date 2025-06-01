@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from "react";
-import { ParticleSystem } from "../simulation/ParticleSystem";
+import { ParticleSystem } from "../../simulation/ParticleSystem";
 
 interface InteractionMatrixProps {
   particleSystem: ParticleSystem | null;

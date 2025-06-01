@@ -86,6 +86,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     transition: "width 0.3s ease",
     cursor: isDragging ? "move" : "default",
     userSelect: "none",
+    zIndex: 100,
   };
 
   return (
