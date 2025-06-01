@@ -80,7 +80,7 @@ export const ControlPanelContent: React.FC<ControlPanelContentProps> = ({
           <input
             type="range"
             min="2"
-            max="12"
+            max="6"
             step="1"
             value={colorCount}
             onChange={(e) => onColorCountChange(parseInt(e.target.value))}

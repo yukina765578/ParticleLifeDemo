@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 interface InteractionMatrixProps {
   colorCount: number;
@@ -17,13 +18,37 @@ export const InteractionMatrix: React.FC<InteractionMatrixProps> = ({
   const [activeCell, setActiveCell] = useState<{
     row: number;
     col: number;
+    rect: DOMRect;
   } | null>(null);
+
+  const matrixRef = useRef<HTMLDivElement>(null);
 
   // Initialize pending matrix when colorMatrix changes
   useEffect(() => {
     setPendingMatrix(colorMatrix.map((row) => [...row]));
     setHasChanges(false);
   }, [colorMatrix]);
+
+  // Close popup when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (activeCell && !event.target) return;
+
+      const target = event.target as Element;
+      const isSliderClick = target.closest("[data-slider-popup]");
+      const isCellClick = target.closest("[data-matrix-cell]");
+
+      if (!isSliderClick && !isCellClick) {
+        setActiveCell(null);
+      }
+    };
+
+    if (activeCell) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () =>
+        document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [activeCell]);
 
   const getColorForIndex = (index: number): string => {
     const hue = (index / colorCount) * 360;
@@ -46,11 +71,14 @@ export const InteractionMatrix: React.FC<InteractionMatrixProps> = ({
   );
 
   const handleCellClick = useCallback(
-    (row: number, col: number) => {
+    (row: number, col: number, event: React.MouseEvent) => {
+      const cellElement = event.currentTarget as HTMLElement;
+      const rect = cellElement.getBoundingClientRect();
+
       if (activeCell?.row === row && activeCell?.col === col) {
         setActiveCell(null);
       } else {
-        setActiveCell({ row, col });
+        setActiveCell({ row, col, rect });
       }
     },
     [activeCell],
@@ -69,7 +97,7 @@ export const InteractionMatrix: React.FC<InteractionMatrixProps> = ({
         if (i === j) {
           newMatrix[i][j] = -0.4;
         } else {
-          newMatrix[i][j] = (Math.random() - 0.5) * 3.0;
+          newMatrix[i][j] = (Math.random() - 0.5) * 2.0;
         }
       }
     }
@@ -92,18 +120,161 @@ export const InteractionMatrix: React.FC<InteractionMatrixProps> = ({
     }
   };
 
-  const getSliderPosition = (row: number, col: number) => {
-    // Calculate position to keep slider visible
-    const isTopHalf = row < colorCount / 2;
-    const isLeftHalf = col < colorCount / 2;
+  const calculateSliderPosition = (rect: DOMRect) => {
+    const sliderWidth = 240;
+    const sliderHeight = 80;
+    const margin = 10;
 
-    return {
-      bottom: isTopHalf ? "auto" : "100%",
-      top: isTopHalf ? "100%" : "auto",
-      left: isLeftHalf ? "0" : "auto",
-      right: isLeftHalf ? "auto" : "0",
-      transform: "none",
+    // Start with position above the cell
+    let top = rect.top - sliderHeight - margin;
+    let left = rect.left + rect.width / 2 - sliderWidth / 2;
+
+    // Adjust if going off-screen
+    if (top < margin) {
+      // Position below if not enough space above
+      top = rect.bottom + margin;
+    }
+
+    if (left < margin) {
+      left = margin;
+    } else if (left + sliderWidth > window.innerWidth - margin) {
+      left = window.innerWidth - sliderWidth - margin;
+    }
+
+    // Ensure it doesn't go off the bottom
+    if (top + sliderHeight > window.innerHeight - margin) {
+      top = window.innerHeight - sliderHeight - margin;
+    }
+
+    return { top, left };
+  };
+
+  const renderSliderPopup = () => {
+    if (!activeCell) return null;
+
+    const value = pendingMatrix[activeCell.row]?.[activeCell.col] || 0;
+    const position = calculateSliderPosition(activeCell.rect);
+
+    // Calculate arrow position
+    const arrowLeft =
+      activeCell.rect.left + activeCell.rect.width / 2 - position.left;
+    const isAbove = position.top < activeCell.rect.top;
+
+    const sliderContainerStyle: React.CSSProperties = {
+      position: "fixed",
+      top: position.top,
+      left: position.left,
+      background: "rgba(20, 20, 30, 0.98)",
+      border: "1px solid rgba(255, 255, 255, 0.3)",
+      borderRadius: "8px",
+      padding: "12px",
+      width: "220px",
+      zIndex: 10000,
+      boxShadow: "0 8px 32px rgba(0, 0, 0, 0.6)",
+      backdropFilter: "blur(8px)",
+      color: "white",
+      fontFamily: "monospace",
     };
+
+    const arrowStyle: React.CSSProperties = {
+      position: "absolute",
+      left: Math.max(8, Math.min(arrowLeft, 220 - 16)),
+      width: 0,
+      height: 0,
+      borderLeft: "8px solid transparent",
+      borderRight: "8px solid transparent",
+      ...(isAbove
+        ? {
+            bottom: "-8px",
+            borderTop: "8px solid rgba(20, 20, 30, 0.98)",
+          }
+        : {
+            top: "-8px",
+            borderBottom: "8px solid rgba(20, 20, 30, 0.98)",
+          }),
+    };
+
+    const sliderStyle: React.CSSProperties = {
+      width: "100%",
+      height: "6px",
+      background:
+        "linear-gradient(to right, #ff4444 0%, #ffffff 50%, #44ff44 100%)",
+      borderRadius: "3px",
+      outline: "none",
+      cursor: "pointer",
+      appearance: "none",
+      WebkitAppearance: "none",
+    };
+
+    return createPortal(
+      <div style={sliderContainerStyle} data-slider-popup>
+        <div style={arrowStyle}></div>
+
+        <div
+          style={{
+            marginBottom: "12px",
+            fontSize: "12px",
+            textAlign: "center",
+            fontWeight: "bold",
+          }}
+        >
+          Color {activeCell.row} → Color {activeCell.col}
+        </div>
+
+        <div
+          style={{
+            marginBottom: "8px",
+            fontSize: "11px",
+            textAlign: "center",
+            opacity: 0.8,
+          }}
+        >
+          Interaction Strength: {value.toFixed(2)}
+        </div>
+
+        <input
+          type="range"
+          min="-1"
+          max="1"
+          step="0.05"
+          value={value}
+          onChange={(e) =>
+            handleValueChange(
+              activeCell.row,
+              activeCell.col,
+              parseFloat(e.target.value),
+            )
+          }
+          style={sliderStyle}
+        />
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            fontSize: "10px",
+            marginTop: "6px",
+            opacity: 0.7,
+          }}
+        >
+          <span>Repel (-1)</span>
+          <span>Neutral (0)</span>
+          <span>Attract (+1)</span>
+        </div>
+
+        <div
+          style={{
+            marginTop: "8px",
+            fontSize: "10px",
+            textAlign: "center",
+            opacity: 0.6,
+          }}
+        >
+          Click outside to close
+        </div>
+      </div>,
+      document.body,
+    );
   };
 
   const containerStyle: React.CSSProperties = {
@@ -140,6 +311,7 @@ export const InteractionMatrix: React.FC<InteractionMatrixProps> = ({
     fontSize: "11px",
     fontWeight: isActive ? "bold" : "normal",
     outline: isActive ? "2px solid rgba(255, 255, 255, 0.5)" : "none",
+    transform: isActive ? "scale(1.05)" : "scale(1)",
   });
 
   const colorLabelStyle = (color: string): React.CSSProperties => ({
@@ -149,31 +321,6 @@ export const InteractionMatrix: React.FC<InteractionMatrixProps> = ({
     borderRadius: "2px",
     margin: "auto",
   });
-
-  const sliderContainerStyle = (
-    row: number,
-    col: number,
-  ): React.CSSProperties => ({
-    position: "absolute",
-    ...getSliderPosition(row, col),
-    background: "rgba(20, 20, 30, 0.95)",
-    border: "1px solid rgba(255, 255, 255, 0.3)",
-    borderRadius: "4px",
-    padding: "8px",
-    width: "200px",
-    zIndex: 1000,
-    boxShadow: "0 2px 10px rgba(0, 0, 0, 0.5)",
-  });
-
-  const sliderStyle: React.CSSProperties = {
-    width: "100%",
-    height: "4px",
-    background:
-      "linear-gradient(to right, #ff4444 0%, #ffffff 50%, #44ff44 100%)",
-    borderRadius: "2px",
-    outline: "none",
-    cursor: "pointer",
-  };
 
   const buttonStyle: React.CSSProperties = {
     background: "rgba(255, 255, 255, 0.1)",
@@ -207,10 +354,10 @@ export const InteractionMatrix: React.FC<InteractionMatrixProps> = ({
   return (
     <div style={containerStyle}>
       <div style={{ marginBottom: "8px", fontSize: "11px", opacity: 0.8 }}>
-        Interaction Matrix (-1 to +1)
+        Interaction Matrix (-1 to +1) • Click cells to edit
       </div>
 
-      <div style={gridStyle}>
+      <div ref={matrixRef} style={gridStyle}>
         {/* Empty top-left cell */}
         <div style={cellStyle}></div>
 
@@ -238,47 +385,10 @@ export const InteractionMatrix: React.FC<InteractionMatrixProps> = ({
                 <div
                   key={`cell-${i}-${j}`}
                   style={valueCellStyle(value, isActive)}
-                  onClick={() => handleCellClick(i, j)}
+                  onClick={(e) => handleCellClick(i, j, e)}
+                  data-matrix-cell
                 >
                   {value.toFixed(1)}
-
-                  {isActive && (
-                    <div style={sliderContainerStyle(i, j)}>
-                      <div
-                        style={{
-                          marginBottom: "8px",
-                          fontSize: "11px",
-                          textAlign: "center",
-                        }}
-                      >
-                        Adjust Interaction: {value.toFixed(2)}
-                      </div>
-                      <input
-                        type="range"
-                        min="-1"
-                        max="1"
-                        step="0.05"
-                        value={value}
-                        onChange={(e) =>
-                          handleValueChange(i, j, parseFloat(e.target.value))
-                        }
-                        style={sliderStyle}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          fontSize: "10px",
-                          marginTop: "4px",
-                          opacity: 0.7,
-                        }}
-                      >
-                        <span>Repel</span>
-                        <span>Attract</span>
-                      </div>
-                    </div>
-                  )}
                 </div>
               );
             })}
@@ -324,6 +434,8 @@ export const InteractionMatrix: React.FC<InteractionMatrixProps> = ({
           Randomize Rules
         </button>
       </div>
+
+      {renderSliderPopup()}
     </div>
   );
 };
